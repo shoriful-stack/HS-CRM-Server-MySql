@@ -23,7 +23,83 @@ const pool = mysql.createPool({
 });
 
 
-// POST route to add designation
+// POST route to add on projects_master
+app.post('/projects_master', async (req, res) => {
+    const { project_name, project_code, project_status } = req.body;
+
+    if (!project_name) {
+        return res.status(400).json({ message: "project_name,project_code is required" });
+    }
+
+    try {
+        const insertQuery = 'INSERT INTO projects_master (project_name,project_code,project_status) VALUES (?, ?, ?)';
+        const [result] = await pool.query(insertQuery, [project_name.trim(),project_code, project_status || 1]);
+
+        res.status(201).json({ insertedId: result.insertId });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: "project_name already exists" });
+        }
+        console.error("Error inserting project_name:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+});
+
+
+// GET Endpoint for Projects_Master with Pagination and Search
+app.get('/projects_master', async (req, res) => {
+    try {
+        // Extract query parameters with default values
+        const page = parseInt(req.query.page) || 1; // Current page number
+        const limit = parseInt(req.query.limit) || 10; // Number of records per page
+        const search = req.query.search ? req.query.search.trim() : ''; // Search term
+
+        // Calculate the offset for the SQL query
+        const offset = (page - 1) * limit;
+
+        // Base SQL query
+        let baseQuery = 'FROM projects_master';
+        let countQuery = 'SELECT COUNT(*) as total ' + baseQuery;
+        let dataQuery = 'SELECT * ' + baseQuery;
+
+        // Parameters array for prepared statements
+        let params = [];
+
+        // If search is provided, modify the queries to include WHERE clause
+        if (search) {
+            baseQuery += ' WHERE project_name LIKE ? ';
+            countQuery = 'SELECT COUNT(*) as total ' + baseQuery;
+            dataQuery = 'SELECT * ' + baseQuery;
+            params.push(`%${search}%`);
+        }
+
+        // Append ORDER BY, LIMIT, and OFFSET to the data query
+        dataQuery += ' ORDER BY id DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        // Execute the count query to get total records matching the search
+        const [countResult] = await pool.query(countQuery, search ? [`%${search}%`] : []);
+        const total = countResult[0].total;
+        const totalPages = Math.ceil(total / limit);
+
+        // Execute the data query to get the actual records
+        const [projects_master] = await pool.query(dataQuery, params);
+
+        res.status(200).json({
+            total,
+            page,
+            limit,
+            totalPages,
+            projects_master
+        });
+
+    } catch (error) {
+        console.error("Error fetching projects_master:", error);
+        res.status(500).json({ message: "Failed to fetch projects_master" });
+    }
+});
+
+// POST route to add department
 app.post('/departments', async (req, res) => {
     const { department_name, department_status } = req.body;
 
@@ -98,7 +174,7 @@ app.get('/departments', async (req, res) => {
     }
 });
 
-// PATCH Endpoint to Update Designation
+// PATCH Endpoint to Update Department
 app.patch('/departments/:id', async (req, res) => {
     const { department_name, department_status } = req.body;
     const id = req.params.id;
@@ -110,7 +186,7 @@ app.patch('/departments/:id', async (req, res) => {
         );
 
         if (updateDepartmentResult.affectedRows === 0) {
-            return res.status(404).json({ error: 'Department not found or no changes made' });
+            return res.status(404).json({ error: 'No changes made' });
         }
 
         // Respond to the client with the update result
