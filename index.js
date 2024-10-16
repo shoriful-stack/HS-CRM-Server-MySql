@@ -98,6 +98,30 @@ app.get('/departments', async (req, res) => {
     }
 });
 
+// PATCH Endpoint to Update Designation
+app.patch('/departments/:id', async (req, res) => {
+    const { department_name, department_status } = req.body;
+    const id = req.params.id;
+    try {
+        // Update the department in the `departments` table
+        const [updateDepartmentResult] = await pool.query(
+            'UPDATE departments SET department_name = ?, department_status = ? WHERE id = ?',
+            [department_name, department_status, id]
+        );
+
+        if (updateDepartmentResult.affectedRows === 0) {
+            return res.status(404).json({ error: 'Department not found or no changes made' });
+        }
+
+        // Respond to the client with the update result
+        res.json(updateDepartmentResult);
+
+    } catch (error) {
+        console.error('Error updating department:', error);
+        res.status(500).json({ error: 'Failed to update department.' });
+    }
+});
+
 // POST route to add designation
 app.post('/designations', async (req, res) => {
     const { designation, designation_status } = req.body;
