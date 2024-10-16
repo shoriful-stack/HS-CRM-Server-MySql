@@ -1,4 +1,4 @@
-require('dotenv').config(); 
+require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
@@ -20,6 +20,82 @@ const pool = mysql.createPool({
     port: process.env.DB_PORT || 3306, // Default MySQL port
     waitForConnections: true,
     queueLimit: 0
+});
+
+
+// POST route to add designation
+app.post('/departments', async (req, res) => {
+    const { department_name, department_status } = req.body;
+
+    if (!department_name) {
+        return res.status(400).json({ message: "department_name is required" });
+    }
+
+    try {
+        const insertQuery = 'INSERT INTO departments (department_name, department_status) VALUES (?, ?)';
+        const [result] = await pool.query(insertQuery, [department_name.trim(), department_status || 1]);
+
+        res.status(201).json({ insertedId: result.insertId });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: "department_name already exists" });
+        }
+        console.error("Error inserting department_name:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+});
+
+// GET Endpoint for Departments with Pagination and Search
+app.get('/departments', async (req, res) => {
+    try {
+        // Extract query parameters with default values
+        const page = parseInt(req.query.page) || 1; // Current page number
+        const limit = parseInt(req.query.limit) || 10; // Number of records per page
+        const search = req.query.search ? req.query.search.trim() : ''; // Search term
+
+        // Calculate the offset for the SQL query
+        const offset = (page - 1) * limit;
+
+        // Base SQL query
+        let baseQuery = 'FROM departments';
+        let countQuery = 'SELECT COUNT(*) as total ' + baseQuery;
+        let dataQuery = 'SELECT * ' + baseQuery;
+
+        // Parameters array for prepared statements
+        let params = [];
+
+        // If search is provided, modify the queries to include WHERE clause
+        if (search) {
+            baseQuery += ' WHERE department_name LIKE ?';
+            countQuery = 'SELECT COUNT(*) as total ' + baseQuery;
+            dataQuery = 'SELECT * ' + baseQuery;
+            params.push(`%${search}%`);
+        }
+
+        // Append ORDER BY, LIMIT, and OFFSET to the data query
+        dataQuery += ' ORDER BY id DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        // Execute the count query to get total records matching the search
+        const [countResult] = await pool.query(countQuery, search ? [`%${search}%`] : []);
+        const total = countResult[0].total;
+        const totalPages = Math.ceil(total / limit);
+
+        // Execute the data query to get the actual records
+        const [departments] = await pool.query(dataQuery, params);
+
+        res.status(200).json({
+            total,
+            page,
+            limit,
+            totalPages,
+            departments
+        });
+
+    } catch (error) {
+        console.error("Error fetching departments:", error);
+        res.status(500).json({ message: "Failed to fetch departments" });
+    }
 });
 
 // POST route to add designation
