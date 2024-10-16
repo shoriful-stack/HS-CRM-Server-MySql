@@ -101,73 +101,26 @@ app.get('/designations', async (req, res) => {
 app.patch('/designations/:id', async (req, res) => {
     const { designation, designation_status } = req.body;
     const id = req.params.id;
-
-    if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid designation ID' });
-    }
-
-    let connection;
-
     try {
-        // Get a connection from the pool
-        connection = await pool.getConnection();
-
-        // Start a transaction
-        await connection.beginTransaction();
-
-        // 1. Find the existing designation
-        const [existingDesignationResult] = await connection.query(
-            'SELECT designation FROM designations WHERE id = ?',
-            [id]
-        );
-
-        if (existingDesignationResult.length === 0) {
-            await connection.rollback();
-            return res.status(404).json({ error: 'Designation not found' });
-        }
-
-        const oldDesignation = existingDesignationResult[0].designation;
-
-        // 2. Update the designation in the `designations` table
-        const [updateDesignationResult] = await connection.query(
+        // Update the designation in the `designations` table
+        const [updateDesignationResult] = await pool.query(
             'UPDATE designations SET designation = ?, designation_status = ? WHERE id = ?',
             [designation, designation_status, id]
         );
 
         if (updateDesignationResult.affectedRows === 0) {
-            await connection.rollback();
-            return res.status(500).json({ error: 'Failed to update designation' });
+            return res.status(404).json({ error: 'Designation not found or no changes made' });
         }
 
-        // 3. If the designation name has changed, update the `employees` table
-        if (oldDesignation !== designation) {
-            const [updateEmployeeResult] = await connection.query(
-                'UPDATE employees SET designation = ? WHERE designation = ?',
-                [designation, oldDesignation]
-            );
-
-            console.log(`Updated ${updateEmployeeResult.affectedRows} employees with new designation.`);
-        }
-
-        // Commit the transaction if everything is successful
-        await connection.commit();
-
-        res.send(updateDesignationResult);
+        // Respond to the client with the update result
+        res.json(updateDesignationResult);
 
     } catch (error) {
-        console.error('Error updating designation and employees:', error);
-        if (connection) {
-            try {
-                await connection.rollback(); // Rollback transaction in case of error
-            } catch (rollbackError) {
-                console.error('Error during transaction rollback:', rollbackError);
-            }
-        }
-        res.status(500).json({ error: 'Failed to update designation and related employees.' });
-    } finally {
-        if (connection) connection.release(); // Release the connection back to the pool
+        console.error('Error updating designation:', error);
+        res.status(500).json({ error: 'Failed to update designation.' });
     }
 });
+
 
 // Start the server
 app.listen(port, () => {
