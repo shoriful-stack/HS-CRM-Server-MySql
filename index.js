@@ -2,7 +2,8 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
-const mysql = require('mysql2/promise'); // Use mysql2 with promise support
+const mysql = require('mysql2/promise');
+const bcrypt = require('bcryptjs');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -20,6 +21,49 @@ const pool = mysql.createPool({
     port: process.env.DB_PORT || 3306, // Default MySQL port
     waitForConnections: true,
     queueLimit: 0
+});
+
+
+// POST route to add an employee
+app.post('/employees', async (req, res) => {
+    const { employee_name, department_name, designation, employee_phone, employee_email, employee_uid, employee_pass } = req.body;
+
+    // Validation: Ensure all required fields are provided
+    if (!employee_name || !department_name || !designation || !employee_phone || !employee_email || !employee_uid || !employee_pass) {
+        return res.status(400).json({ message: "All fields are required" });
+    }
+
+    try {
+        // Hash the employee_pass before saving to the database
+        const hash = await bcrypt.genSalt(10);
+        const hashedPass = await bcrypt.hash(employee_pass, hash);
+
+        // Insert employee data with the hashed password into the employees table
+        const insertQuery = `
+            INSERT INTO employees 
+            (employee_name, department_name, designation, employee_phone, employee_email, employee_uid, employee_pass) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        const [result] = await pool.query(insertQuery, [
+            employee_name,
+            department_name,
+            designation,
+            employee_phone.trim(),
+            employee_email.trim(),
+            employee_uid.trim(),
+            hashedPass.trim()
+        ]);
+
+        res.status(201).json({ insertedId: result.insertId });
+    } catch (error) {
+        // Handle duplicate UID error or other issues
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: "Employee UID already exists" });
+        }
+        console.error("Error inserting employee:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
 });
 
 
@@ -296,6 +340,26 @@ app.get('/designations', async (req, res) => {
         res.status(500).json({ message: "Failed to fetch designations" });
     }
 });
+// GET Endpoint for Designations with Pagination and Search
+// app.get('/designations/all', async (req, res) => {
+//     try {
+
+//         // Execute the data query to get the actual records
+//         const [designations] = await pool.query(dataQuery, params);
+
+//         res.status(200).json({
+//             total,
+//             page,
+//             limit,
+//             totalPages,
+//             designations
+//         });
+
+//     } catch (error) {
+//         console.error("Error fetching designations:", error);
+//         res.status(500).json({ message: "Failed to fetch designations" });
+//     }
+// });
 
 // PATCH Endpoint to Update Designation
 app.patch('/designations/:id', async (req, res) => {
