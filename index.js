@@ -99,6 +99,30 @@ app.get('/projects_master', async (req, res) => {
     }
 });
 
+// PATCH Endpoint to Update Projects_master
+app.patch('/projects_master/:id', async (req, res) => {
+    const { project_name, project_code, project_status } = req.body;
+    const id = req.params.id;
+    try {
+        // Update the project in the `projects_master` table
+        const [updateProjects_MasterResult] = await pool.query(
+            'UPDATE projects_master SET project_name = ?, project_code = ?,project_status = ? WHERE id = ?',
+            [project_name, project_code, project_status, id]
+        );
+
+        if (updateProjects_MasterResult.affectedRows === 0) {
+            return res.status(404).json({ error: 'No changes made' });
+        }
+
+        // Respond to the client with the update result
+        res.json(updateProjects_MasterResult);
+
+    } catch (error) {
+        console.error('Error updating Projects_Master:', error);
+        res.status(500).json({ error: 'Failed to update Projects_Master.' });
+    }
+});
+
 // POST route to add department
 app.post('/departments', async (req, res) => {
     const { department_name, department_status } = req.body;
