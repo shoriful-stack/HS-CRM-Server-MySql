@@ -66,6 +66,66 @@ app.post('/employees', async (req, res) => {
     }
 });
 
+// GET Endpoint for employees with Pagination and Search
+app.get('/employees', async (req, res) => {
+    try {
+        // Extract query parameters with default values
+        const page = parseInt(req.query.page) || 1; // Current page number
+        const limit = parseInt(req.query.limit) || 10; // Number of records per page
+        const search = req.query.search ? req.query.search.trim() : ''; // Search term
+
+        // Calculate the offset for the SQL query
+        const offset = (page - 1) * limit;
+
+        // Base SQL query
+        let baseQuery = 'FROM employees';
+        let countQuery = 'SELECT COUNT(*) as total ' + baseQuery;
+        let dataQuery = 'SELECT * ' + baseQuery;
+
+        // Parameters array for prepared statements
+        let params = [];
+        let countParams = [];
+
+        // Modify the queries to include WHERE clause if search is provided
+        if (search) {
+            baseQuery += ` WHERE employee_name LIKE ? 
+                           OR employee_uid = ? 
+                           OR employee_phone LIKE ? 
+                           OR employee_email LIKE ?`;
+            countQuery = 'SELECT COUNT(*) as total ' + baseQuery;
+            dataQuery = 'SELECT * ' + baseQuery;
+
+            // Add search term for employee_name, employee_uid, employee_phone, and employee_email
+            params.push(`%${search}%`, search, `%${search}%`, `%${search}%`);
+            countParams.push(`%${search}%`, search, `%${search}%`, `%${search}%`);
+        }
+
+        // Append ORDER BY, LIMIT, and OFFSET to the data query
+        dataQuery += ' ORDER BY id DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        // Execute the count query to get total records matching the search
+        const [countResult] = await pool.query(countQuery, countParams);
+        const total = countResult[0].total;
+        const totalPages = Math.ceil(total / limit);
+
+        // Execute the data query to get the actual records
+        const [employees] = await pool.query(dataQuery, params);
+
+        // Send the response with pagination and employee data
+        res.status(200).json({
+            total,
+            page,
+            limit,
+            totalPages,
+            employees
+        });
+
+    } catch (error) {
+        console.error("Error fetching employees:", error);
+        res.status(500).json({ message: "Failed to fetch employees" });
+    }
+});
 
 // POST route to add on projects_master
 app.post('/projects_master', async (req, res) => {
