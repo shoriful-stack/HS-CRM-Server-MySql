@@ -242,6 +242,23 @@ app.get('/departments', async (req, res) => {
     }
 });
 
+// GET route to fetch all departments
+app.get("/departments/all", async (req, res) => {
+    try {
+        // Query to fetch all departments from the departments table
+        const query = 'SELECT * FROM departments';
+
+        // Execute the query
+        const [departments] = await pool.query(query);
+
+        // Send the result as a response
+        res.status(200).json(departments);
+    } catch (error) {
+        console.error("Error fetching departments:", error);
+        res.status(500).json({ error: "Failed to fetch all departments" });
+    }
+});
+
 // PATCH Endpoint to Update Department
 app.patch('/departments/:id', async (req, res) => {
     const { department_name, department_status } = req.body;
@@ -340,26 +357,24 @@ app.get('/designations', async (req, res) => {
         res.status(500).json({ message: "Failed to fetch designations" });
     }
 });
-// GET Endpoint for Designations with Pagination and Search
-// app.get('/designations/all', async (req, res) => {
-//     try {
 
-//         // Execute the data query to get the actual records
-//         const [designations] = await pool.query(dataQuery, params);
+// GET route to fetch all designations
+app.get("/designations/all", async (req, res) => {
+    try {
+        // Query to fetch all designations from the designations table
+        const query = 'SELECT * FROM designations';
 
-//         res.status(200).json({
-//             total,
-//             page,
-//             limit,
-//             totalPages,
-//             designations
-//         });
+        // Execute the query
+        const [designations] = await pool.query(query);
 
-//     } catch (error) {
-//         console.error("Error fetching designations:", error);
-//         res.status(500).json({ message: "Failed to fetch designations" });
-//     }
-// });
+        // Send the result as a response
+        res.status(200).json(designations);
+    } catch (error) {
+        console.error("Error fetching designations:", error);
+        res.status(500).json({ error: "Failed to fetch all designations" });
+    }
+});
+
 
 // PATCH Endpoint to Update Designation
 app.patch('/designations/:id', async (req, res) => {
