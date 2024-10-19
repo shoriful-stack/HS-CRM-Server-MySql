@@ -123,6 +123,49 @@ app.get('/customers', async (req, res) => {
 });
 
 
+// GET route to fetch all customers
+app.get("/customers/all", async (req, res) => {
+    try {
+        // Query to fetch all customers from the customers table
+        const query = 'SELECT * FROM customers';
+
+        // Execute the query
+        const [customers] = await pool.query(query);
+
+        // Send the result as a response
+        res.status(200).json(customers);
+    } catch (error) {
+        console.error("Error fetching customers:", error);
+        res.status(500).json({ error: "Failed to fetch all customers" });
+    }
+});
+
+
+// PATCH Endpoint to Update customer
+app.patch('/customers/:id', async (req, res) => {
+    const { customer_name, customer_phone, customer_email, customer_address, customer_status } = req.body;
+    const id = req.params.id;
+    try {
+        // Update the customer in the `customers` table
+        const [updateCustomerResult] = await pool.query(
+            'UPDATE customers SET customer_name = ?,customer_phone = ?, customer_email = ?, customer_address = ?, customer_status = ? WHERE id = ?',
+            [customer_name,customer_phone, customer_email, customer_address, customer_status, id]
+        );
+
+        if (updateCustomerResult.affectedRows === 0) {
+            return res.status(404).json({ error: 'No changes made' });
+        }
+
+        // Respond to the client with the update result
+        res.json(updateCustomerResult);
+
+    } catch (error) {
+        console.error('Error updating Customer:', error);
+        res.status(500).json({ error: 'Failed to update department.' });
+    }
+});
+
+
 // POST route to add an employee
 app.post('/employees', async (req, res) => {
     const { employee_name, department_name, designation, employee_phone, employee_email, employee_uid, employee_pass } = req.body;
@@ -226,6 +269,47 @@ app.get('/employees', async (req, res) => {
     }
 });
 
+// GET route to fetch all employees
+app.get("/employees/all", async (req, res) => {
+    try {
+        // Query to fetch all employees from the employees table
+        const query = 'SELECT * FROM employees';
+
+        // Execute the query
+        const [employees] = await pool.query(query);
+
+        // Send the result as a response
+        res.status(200).json(employees);
+    } catch (error) {
+        console.error("Error fetching employees:", error);
+        res.status(500).json({ error: "Failed to fetch all employees" });
+    }
+});
+
+// PATCH Endpoint to Update Department
+// app.patch('/departments/:id', async (req, res) => {
+//     const { department_name, department_status } = req.body;
+//     const id = req.params.id;
+//     try {
+//         // Update the department in the `departments` table
+//         const [updateDepartmentResult] = await pool.query(
+//             'UPDATE departments SET department_name = ?, department_status = ? WHERE id = ?',
+//             [department_name, department_status, id]
+//         );
+
+//         if (updateDepartmentResult.affectedRows === 0) {
+//             return res.status(404).json({ error: 'No changes made' });
+//         }
+
+//         // Respond to the client with the update result
+//         res.json(updateDepartmentResult);
+
+//     } catch (error) {
+//         console.error('Error updating department:', error);
+//         res.status(500).json({ error: 'Failed to update department.' });
+//     }
+// });
+
 // POST route to add on projects_master
 app.post('/projects_master', async (req, res) => {
     const { project_name, project_code, project_status } = req.body;
@@ -299,6 +383,23 @@ app.get('/projects_master', async (req, res) => {
     } catch (error) {
         console.error("Error fetching projects_master:", error);
         res.status(500).json({ message: "Failed to fetch projects_master" });
+    }
+});
+
+// GET route to fetch all projects_master
+app.get("/projects_master/all", async (req, res) => {
+    try {
+        // Query to fetch all projects from the projects_master table
+        const query = 'SELECT * FROM projects_master';
+
+        // Execute the query
+        const [projects_master] = await pool.query(query);
+
+        // Send the result as a response
+        res.status(200).json(projects_master);
+    } catch (error) {
+        console.error("Error fetching projects_master:", error);
+        res.status(500).json({ error: "Failed to fetch all projects_master" });
     }
 });
 
