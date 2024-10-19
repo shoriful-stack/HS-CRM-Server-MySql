@@ -24,6 +24,105 @@ const pool = mysql.createPool({
 });
 
 
+// CREATE TABLE customers ( id INT AUTO_INCREMENT PRIMARY KEY, customer_name VARCHAR(100) NOT NULL, customer_phone VARCHAR(20), customer_email VARCHAR(100), customer_address TEXT, customer_status TINYINT(1) DEFAULT 1 );
+
+// POST route to add an customer
+app.post('/customers', async (req, res) => {
+    const { customer_name, customer_phone, customer_email, customer_address, customer_status } = req.body;
+
+    // Validation: Ensure all required fields are provided
+    if (!customer_name) {
+        return res.status(400).json({ message: "Customer Name Fields are required" });
+    }
+
+    try {
+        const insertQuery = `
+            INSERT INTO customers 
+            (customer_name, customer_phone, customer_email, customer_address, customer_status) 
+            VALUES (?, ?, ?, ?, ?)
+        `;
+
+        const [result] = await pool.query(insertQuery, [
+            customer_name,
+            customer_phone.trim(),
+            customer_email.trim(),
+            customer_address,
+            customer_status
+        ]);
+
+        res.status(201).json({ insertedId: result.insertId });
+    } catch (error) {
+        // Handle duplicate UID error or other issues
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: "this customer already exists" });
+        }
+        console.error("Error inserting customer:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+});
+
+// GET Endpoint for customers with Pagination and Search
+app.get('/customers', async (req, res) => {
+    try {
+        // Extract query parameters with default values
+        const page = parseInt(req.query.page) || 1; // Current page number
+        const limit = parseInt(req.query.limit) || 10; // Number of records per page
+        const search = req.query.search ? req.query.search.trim() : ''; // Search term
+
+        // Calculate the offset for the SQL query
+        const offset = (page - 1) * limit;
+
+        // Base SQL query
+        let baseQuery = 'FROM customers';
+        let countQuery = 'SELECT COUNT(*) as total ' + baseQuery;
+        let dataQuery = 'SELECT * ' + baseQuery;
+
+        // Parameters array for prepared statements
+        let params = [];
+        let countParams = [];
+
+        // Modify the queries to include WHERE clause if search is provided
+        if (search) {
+            baseQuery += ` WHERE customer_name LIKE ?
+                           OR customer_phone LIKE ?
+                           OR customer_email LIKE ?  
+                           OR customer_address LIKE ?`;
+            countQuery = 'SELECT COUNT(*) as total ' + baseQuery;
+            dataQuery = 'SELECT * ' + baseQuery;
+
+            // Add search term for customer_name, customer_address, customer_phone, and customer_email
+            params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+            countParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+        }
+
+        // Append ORDER BY, LIMIT, and OFFSET to the data query
+        dataQuery += ' ORDER BY id DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        // Execute the count query to get total records matching the search
+        const [countResult] = await pool.query(countQuery, countParams);
+        const total = countResult[0].total;
+        const totalPages = Math.ceil(total / limit);
+
+        // Execute the data query to get the actual records
+        const [customers] = await pool.query(dataQuery, params);
+
+        // Send the response with pagination and customer data
+        res.status(200).json({
+            total,
+            page,
+            limit,
+            totalPages,
+            customers
+        });
+
+    } catch (error) {
+        console.error("Error fetching customers:", error);
+        res.status(500).json({ message: "Failed to fetch customers" });
+    }
+});
+
+
 // POST route to add an employee
 app.post('/employees', async (req, res) => {
     const { employee_name, department_name, designation, employee_phone, employee_email, employee_uid, employee_pass } = req.body;
