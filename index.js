@@ -140,7 +140,6 @@ app.get("/customers/all", async (req, res) => {
     }
 });
 
-
 // PATCH Endpoint to Update customer
 app.patch('/customers/:id', async (req, res) => {
     const { customer_name, customer_phone, customer_email, customer_address, customer_status } = req.body;
@@ -165,6 +164,37 @@ app.patch('/customers/:id', async (req, res) => {
     }
 });
 
+app.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+
+    // Validate input
+    if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+    }
+
+    try {
+        const [users] = await pool.query('SELECT * FROM employees WHERE employee_email = ?', [email]);
+
+        if (users.length === 0) {
+            return res.status(401).json({ message: "Invalid email or password" });
+        }
+
+        const user = users[0];
+
+        // Compare the hashed password
+        const match = await bcrypt.compare(password, user.employee_pass);
+        
+        if (!match) {
+            return res.status(401).json({ message: "Invalid email or password" });
+        }
+
+        // Send back the user role and employee name
+        res.status(200).json({ name: user.employee_name, role: user.role });
+    } catch (error) {
+        console.error("Login error:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+});
 
 // POST route to add an employee
 app.post('/employees', async (req, res) => {
@@ -283,6 +313,45 @@ app.get("/employees/all", async (req, res) => {
     } catch (error) {
         console.error("Error fetching employees:", error);
         res.status(500).json({ error: "Failed to fetch all employees" });
+    }
+});
+
+// fetch employee details by email
+app.get('/employee/:email', async (req, res) => {
+    const { email } = req.params;
+
+    try {
+        const [employee] = await pool.query('SELECT * FROM employees WHERE employee_email = ?', [email]);
+        
+        if (employee.length === 0) {
+            return res.status(404).json({ message: "Employee not found" });
+        }
+
+        res.status(200).json(employee[0]);
+    } catch (error) {
+        console.error("Error fetching employee details:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+});
+
+app.put('/employee/:email/password', async (req, res) => {
+    const { email } = req.params;
+    const { newPassword } = req.body;
+
+    try {
+        const hash = await bcrypt.genSalt(10);
+        const hashedPass = await bcrypt.hash(newPassword, hash);
+
+        const [result] = await pool.query('UPDATE employees SET employee_pass = ? WHERE employee_email = ?', [hashedPass, email]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: "Employee not found" });
+        }
+
+        res.status(200).json({ message: "Password updated successfully" });
+    } catch (error) {
+        console.error("Error updating password:", error);
+        res.status(500).json({ message: "Internal Server Error" });
     }
 });
 
