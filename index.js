@@ -186,6 +186,7 @@ app.patch("/customers/:id", async (req, res) => {
   }
 });
 
+// login endpoint
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
@@ -233,7 +234,6 @@ app.post("/employees", async (req, res) => {
     employee_pass,
   } = req.body;
 
-  // Validation: Ensure all required fields are provided
   if (
     !employee_name ||
     !department_name ||
@@ -251,17 +251,31 @@ app.post("/employees", async (req, res) => {
     const hash = await bcrypt.genSalt(10);
     const hashedPass = await bcrypt.hash(employee_pass, hash);
 
-    // Insert employee data with the hashed password into the employees table
+    // Find department_id
+    const [departmentResult] = await pool.query(
+      "SELECT id FROM departments WHERE department_name = ?",
+      [department_name]
+    );
+    const department_id = departmentResult[0]?.id;
+
+    // Find designation_id
+    const [designationResult] = await pool.query(
+      "SELECT id FROM designations WHERE designation = ?",
+      [designation]
+    );
+    const designation_id = designationResult[0]?.id;
+
+    // Insert employee data with department_id and designation_id
     const insertQuery = `
-            INSERT INTO employees 
-            (employee_name, department_name, designation, employee_phone, employee_email, employee_uid, employee_pass) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `;
+      INSERT INTO employees 
+      (employee_name, department_id, designation_id, employee_phone, employee_email, employee_uid, employee_pass) 
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
 
     const [result] = await pool.query(insertQuery, [
       employee_name,
-      department_name,
-      designation,
+      department_id,
+      designation_id,
       employee_phone.trim(),
       employee_email.trim(),
       employee_uid.trim(),
@@ -270,7 +284,6 @@ app.post("/employees", async (req, res) => {
 
     res.status(201).json({ insertedId: result.insertId });
   } catch (error) {
-    // Handle duplicate UID error or other issues
     if (error.code === "ER_DUP_ENTRY") {
       return res.status(409).json({ message: "Employee UID already exists" });
     }
@@ -282,50 +295,39 @@ app.post("/employees", async (req, res) => {
 // GET Endpoint for employees with Pagination and Search
 app.get("/employees", async (req, res) => {
   try {
-    // Extract query parameters with default values
-    const page = parseInt(req.query.page) || 1; // Current page number
-    const limit = parseInt(req.query.limit) || 10; // Number of records per page
-    const search = req.query.search ? req.query.search.trim() : ""; // Search term
-
-    // Calculate the offset for the SQL query
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search ? req.query.search.trim() : "";
     const offset = (page - 1) * limit;
 
-    // Base SQL query
-    let baseQuery = "FROM employees";
-    let countQuery = "SELECT COUNT(*) as total " + baseQuery;
-    let dataQuery = "SELECT * " + baseQuery;
-
-    // Parameters array for prepared statements
-    let params = [];
-    let countParams = [];
-
-    // Modify the queries to include WHERE clause if search is provided
+    let baseQuery = `
+      SELECT e.*, d.department_name, des.designation 
+      FROM employees e
+      LEFT JOIN departments d ON e.department_id = d.id
+      LEFT JOIN designations des ON e.designation_id = des.id
+    `;
+    
+    let countQuery = "SELECT COUNT(*) as total FROM employees e";
+    
     if (search) {
-      baseQuery += ` WHERE employee_name LIKE ? 
-                           OR employee_uid = ? 
-                           OR employee_phone LIKE ? 
-                           OR employee_email LIKE ?`;
-      countQuery = "SELECT COUNT(*) as total " + baseQuery;
-      dataQuery = "SELECT * " + baseQuery;
-
-      // Add search term for employee_name, employee_uid, employee_phone, and employee_email
-      params.push(`%${search}%`, search, `%${search}%`, `%${search}%`);
-      countParams.push(`%${search}%`, search, `%${search}%`, `%${search}%`);
+      baseQuery += ` WHERE e.employee_name LIKE ? OR e.employee_uid = ? OR e.employee_phone LIKE ? OR e.employee_email LIKE ?`;
+      countQuery += ` WHERE e.employee_name LIKE ? OR e.employee_uid = ? OR e.employee_phone LIKE ? OR e.employee_email LIKE ?`;
     }
 
-    // Append ORDER BY, LIMIT, and OFFSET to the data query
-    dataQuery += " ORDER BY id DESC LIMIT ? OFFSET ?";
+    const params = search ? [
+      `%${search}%`, search, `%${search}%`, `%${search}%`,
+      `%${search}%`, search, `%${search}%`, `%${search}%`
+    ] : [];
+
+    baseQuery += " ORDER BY e.id DESC LIMIT ? OFFSET ?";
     params.push(limit, offset);
 
-    // Execute the count query to get total records matching the search
-    const [countResult] = await pool.query(countQuery, countParams);
+    const [countResult] = await pool.query(countQuery, params.slice(0, 4));
     const total = countResult[0].total;
     const totalPages = Math.ceil(total / limit);
 
-    // Execute the data query to get the actual records
-    const [employees] = await pool.query(dataQuery, params);
+    const [employees] = await pool.query(baseQuery, params);
 
-    // Send the response with pagination and employee data
     res.status(200).json({
       total,
       page,
@@ -338,6 +340,7 @@ app.get("/employees", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch employees" });
   }
 });
+
 
 // GET route to fetch all employees
 app.get("/employees/all", async (req, res) => {
@@ -362,7 +365,13 @@ app.get("/employee/:email", async (req, res) => {
 
   try {
     const [employee] = await pool.query(
-      "SELECT * FROM employees WHERE employee_email = ?",
+      `
+      SELECT e.*, d.department_name, des.designation
+      FROM employees e
+      LEFT JOIN departments d ON e.department_id = d.id
+      LEFT JOIN designations des ON e.designation_id = des.id
+      WHERE e.employee_email = ?
+      `,
       [email]
     );
 
