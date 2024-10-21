@@ -23,166 +23,160 @@ const pool = mysql.createPool({
   queueLimit: 0,
 });
 
-// CREATE TABLE customers ( id INT AUTO_INCREMENT PRIMARY KEY, customer_name VARCHAR(100) NOT NULL, customer_phone VARCHAR(20), customer_email VARCHAR(100), customer_address TEXT, customer_status TINYINT(1) DEFAULT 1 );
-
-// POST route to add an customer
-app.post("/customers", async (req, res) => {
+// POST route to add an employee
+app.post("/projects", async (req, res) => {
   const {
+    project_name,
     customer_name,
-    customer_phone,
-    customer_email,
-    customer_address,
-    customer_status,
+    project_type,
+    department_name,
+    hod,
+    pm,
+    year,
+    phase,
+    project_code
   } = req.body;
 
-  // Validation: Ensure all required fields are provided
-  if (!customer_name) {
-    return res
-      .status(400)
-      .json({ message: "Customer Name Fields are required" });
+  // Check if all required fields are provided
+  if (
+    !project_name ||
+    !customer_name ||
+    !project_type ||
+    !department_name ||
+    !hod ||
+    !pm ||
+    !year ||
+    !project_code
+  ) {
+    return res.status(400).json({ message: "All fields are required" });
   }
 
   try {
+    // Fetch project ID from project master
+    const [projectResult] = await pool.query(
+      "SELECT id FROM projects_master WHERE project_name = ?",
+      [project_name]
+    );
+    const project_id = projectResult[0]?.id;
+
+    // Fetch customer ID
+    const [customerResult] = await pool.query(
+      "SELECT id FROM customers WHERE customer_name = ?",
+      [customer_name]
+    );
+    const customer_id = customerResult[0]?.id;
+
+    // Fetch department ID
+    const [departmentResult] = await pool.query(
+      "SELECT id FROM departments WHERE department_name = ?",
+      [department_name]
+    );
+    const department_id = departmentResult[0]?.id;
+
+    // Fetch HOD (Head of Department) ID
+    const [hodResult] = await pool.query(
+      "SELECT id FROM employees WHERE employee_name = ?",
+      [hod]
+    );
+    const hod_id = hodResult[0]?.id;
+
+    // Fetch Project Manager (PM) ID
+    const [pmResult] = await pool.query(
+      "SELECT id FROM employees WHERE employee_name = ?",
+      [pm]
+    );
+    const pm_id = pmResult[0]?.id;
+
+    // Insert project data
     const insertQuery = `
-            INSERT INTO customers 
-            (customer_name, customer_phone, customer_email, customer_address, customer_status) 
-            VALUES (?, ?, ?, ?, ?)
-        `;
+      INSERT INTO projects 
+      (project_id, customer_id, project_type, department_id, hod_id, pm_id, year, phase, project_code) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
 
     const [result] = await pool.query(insertQuery, [
-      customer_name,
-      customer_phone.trim(),
-      customer_email.trim(),
-      customer_address,
-      customer_status,
+      project_id,   
+      customer_id,   
+      project_type,   
+      department_id,  
+      hod_id,          
+      pm_id,           
+      year,            
+      phase,           
+      project_code  
     ]);
 
     res.status(201).json({ insertedId: result.insertId });
   } catch (error) {
-    // Handle duplicate UID error or other issues
     if (error.code === "ER_DUP_ENTRY") {
-      return res.status(409).json({ message: "this customer already exists" });
+      return res.status(409).json({ message: "Project code already exists" });
     }
-    console.error("Error inserting customer:", error);
+    console.error("Error inserting project:", error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 });
 
-// GET Endpoint for customers with Pagination and Search
-app.get("/customers", async (req, res) => {
+// GET Endpoint for projects with Pagination and Search
+app.get("/projects", async (req, res) => {
   try {
-    // Extract query parameters with default values
-    const page = parseInt(req.query.page) || 1; // Current page number
-    const limit = parseInt(req.query.limit) || 10; // Number of records per page
-    const search = req.query.search ? req.query.search.trim() : ""; // Search term
-
-    // Calculate the offset for the SQL query
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search ? req.query.search.trim() : "";
     const offset = (page - 1) * limit;
 
-    // Base SQL query
-    let baseQuery = "FROM customers";
-    let countQuery = "SELECT COUNT(*) as total " + baseQuery;
-    let dataQuery = "SELECT * " + baseQuery;
+    // Updated query with distinct alias for HOD and PM
+    let baseQuery = `
+      SELECT p.*, pm.project_name, c.customer_name, d.department_name, 
+             hod.employee_name AS hod_name, pm_employee.employee_name AS pm_name
+      FROM projects p
+      LEFT JOIN projects_master pm ON p.project_id = pm.id
+      LEFT JOIN customers c ON p.customer_id = c.id
+      LEFT JOIN departments d ON p.department_id = d.id
+      LEFT JOIN employees hod ON p.hod_id = hod.id
+      LEFT JOIN employees pm_employee ON p.pm_id = pm_employee.id
+    `;
 
-    // Parameters array for prepared statements
-    let params = [];
-    let countParams = [];
+    let countQuery = "SELECT COUNT(*) as total FROM projects p";
 
-    // Modify the queries to include WHERE clause if search is provided
     if (search) {
-      baseQuery += ` WHERE customer_name LIKE ?
-                           OR customer_phone LIKE ?
-                           OR customer_email LIKE ?  
-                           OR customer_address LIKE ?`;
-      countQuery = "SELECT COUNT(*) as total " + baseQuery;
-      dataQuery = "SELECT * " + baseQuery;
-
-      // Add search term for customer_name, customer_address, customer_phone, and customer_email
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
-      countParams.push(
-        `%${search}%`,
-        `%${search}%`,
-        `%${search}%`,
-        `%${search}%`
-      );
+      baseQuery += ` WHERE p.project_id LIKE ? OR p.employee_uid = ? OR p.employee_phone LIKE ? OR p.employee_email LIKE ?`;
+      countQuery += ` WHERE p.employee_name LIKE ? OR p.employee_uid = ? OR p.employee_phone LIKE ? OR p.employee_email LIKE ?`;
     }
 
-    // Append ORDER BY, LIMIT, and OFFSET to the data query
-    dataQuery += " ORDER BY id DESC LIMIT ? OFFSET ?";
+    const params = search
+      ? [
+          `%${search}%`,
+          search,
+          `%${search}%`,
+          `%${search}%`,
+          `%${search}%`,
+          search,
+          `%${search}%`,
+          `%${search}%`,
+        ]
+      : [];
+
+    baseQuery += " ORDER BY p.id DESC LIMIT ? OFFSET ?";
     params.push(limit, offset);
 
-    // Execute the count query to get total records matching the search
-    const [countResult] = await pool.query(countQuery, countParams);
+    // Fetch total count
+    const [countResult] = await pool.query(countQuery, params.slice(0, 4));
     const total = countResult[0].total;
     const totalPages = Math.ceil(total / limit);
 
-    // Execute the data query to get the actual records
-    const [customers] = await pool.query(dataQuery, params);
+    // Fetch projects
+    const [projects] = await pool.query(baseQuery, params);
 
-    // Send the response with pagination and customer data
     res.status(200).json({
       total,
       page,
       limit,
       totalPages,
-      customers,
+      projects,
     });
   } catch (error) {
-    console.error("Error fetching customers:", error);
-    res.status(500).json({ message: "Failed to fetch customers" });
-  }
-});
-
-// GET route to fetch all customers
-app.get("/customers/all", async (req, res) => {
-  try {
-    // Query to fetch all customers from the customers table
-    const query = "SELECT * FROM customers";
-
-    // Execute the query
-    const [customers] = await pool.query(query);
-
-    // Send the result as a response
-    res.status(200).json(customers);
-  } catch (error) {
-    console.error("Error fetching customers:", error);
-    res.status(500).json({ error: "Failed to fetch all customers" });
-  }
-});
-
-// PATCH Endpoint to Update customer
-app.patch("/customers/:id", async (req, res) => {
-  const {
-    customer_name,
-    customer_phone,
-    customer_email,
-    customer_address,
-    customer_status,
-  } = req.body;
-  const id = req.params.id;
-  try {
-    // Update the customer in the `customers` table
-    const [updateCustomerResult] = await pool.query(
-      "UPDATE customers SET customer_name = ?,customer_phone = ?, customer_email = ?, customer_address = ?, customer_status = ? WHERE id = ?",
-      [
-        customer_name,
-        customer_phone,
-        customer_email,
-        customer_address,
-        customer_status,
-        id,
-      ]
-    );
-
-    if (updateCustomerResult.affectedRows === 0) {
-      return res.status(404).json({ error: "No changes made" });
-    }
-
-    // Respond to the client with the update result
-    res.json(updateCustomerResult);
-  } catch (error) {
-    console.error("Error updating Customer:", error);
-    res.status(500).json({ error: "Failed to update department." });
+    console.error("Error fetching projects:", error);
+    res.status(500).json({ message: "Failed to fetch projects" });
   }
 });
 
@@ -470,6 +464,167 @@ app.patch("/employees/:id", async (req, res) => {
   } catch (error) {
     console.error("Error updating Employees:", error);
     res.status(500).json({ error: "Failed to update Employees." });
+  }
+});
+
+// POST route to add an customer
+app.post("/customers", async (req, res) => {
+  const {
+    customer_name,
+    customer_phone,
+    customer_email,
+    customer_address,
+    customer_status,
+  } = req.body;
+
+  // Validation: Ensure all required fields are provided
+  if (!customer_name) {
+    return res
+      .status(400)
+      .json({ message: "Customer Name Fields are required" });
+  }
+
+  try {
+    const insertQuery = `
+            INSERT INTO customers 
+            (customer_name, customer_phone, customer_email, customer_address, customer_status) 
+            VALUES (?, ?, ?, ?, ?)
+        `;
+
+    const [result] = await pool.query(insertQuery, [
+      customer_name,
+      customer_phone.trim(),
+      customer_email.trim(),
+      customer_address,
+      customer_status,
+    ]);
+
+    res.status(201).json({ insertedId: result.insertId });
+  } catch (error) {
+    // Handle duplicate UID error or other issues
+    if (error.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ message: "this customer already exists" });
+    }
+    console.error("Error inserting customer:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+// GET Endpoint for customers with Pagination and Search
+app.get("/customers", async (req, res) => {
+  try {
+    // Extract query parameters with default values
+    const page = parseInt(req.query.page) || 1; // Current page number
+    const limit = parseInt(req.query.limit) || 10; // Number of records per page
+    const search = req.query.search ? req.query.search.trim() : ""; // Search term
+
+    // Calculate the offset for the SQL query
+    const offset = (page - 1) * limit;
+
+    // Base SQL query
+    let baseQuery = "FROM customers";
+    let countQuery = "SELECT COUNT(*) as total " + baseQuery;
+    let dataQuery = "SELECT * " + baseQuery;
+
+    // Parameters array for prepared statements
+    let params = [];
+    let countParams = [];
+
+    // Modify the queries to include WHERE clause if search is provided
+    if (search) {
+      baseQuery += ` WHERE customer_name LIKE ?
+                           OR customer_phone LIKE ?
+                           OR customer_email LIKE ?  
+                           OR customer_address LIKE ?`;
+      countQuery = "SELECT COUNT(*) as total " + baseQuery;
+      dataQuery = "SELECT * " + baseQuery;
+
+      // Add search term for customer_name, customer_address, customer_phone, and customer_email
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+      countParams.push(
+        `%${search}%`,
+        `%${search}%`,
+        `%${search}%`,
+        `%${search}%`
+      );
+    }
+
+    // Append ORDER BY, LIMIT, and OFFSET to the data query
+    dataQuery += " ORDER BY id DESC LIMIT ? OFFSET ?";
+    params.push(limit, offset);
+
+    // Execute the count query to get total records matching the search
+    const [countResult] = await pool.query(countQuery, countParams);
+    const total = countResult[0].total;
+    const totalPages = Math.ceil(total / limit);
+
+    // Execute the data query to get the actual records
+    const [customers] = await pool.query(dataQuery, params);
+
+    // Send the response with pagination and customer data
+    res.status(200).json({
+      total,
+      page,
+      limit,
+      totalPages,
+      customers,
+    });
+  } catch (error) {
+    console.error("Error fetching customers:", error);
+    res.status(500).json({ message: "Failed to fetch customers" });
+  }
+});
+
+// GET route to fetch all customers
+app.get("/customers/all", async (req, res) => {
+  try {
+    // Query to fetch all customers from the customers table
+    const query = "SELECT * FROM customers";
+
+    // Execute the query
+    const [customers] = await pool.query(query);
+
+    // Send the result as a response
+    res.status(200).json(customers);
+  } catch (error) {
+    console.error("Error fetching customers:", error);
+    res.status(500).json({ error: "Failed to fetch all customers" });
+  }
+});
+
+// PATCH Endpoint to Update customer
+app.patch("/customers/:id", async (req, res) => {
+  const {
+    customer_name,
+    customer_phone,
+    customer_email,
+    customer_address,
+    customer_status,
+  } = req.body;
+  const id = req.params.id;
+  try {
+    // Update the customer in the `customers` table
+    const [updateCustomerResult] = await pool.query(
+      "UPDATE customers SET customer_name = ?,customer_phone = ?, customer_email = ?, customer_address = ?, customer_status = ? WHERE id = ?",
+      [
+        customer_name,
+        customer_phone,
+        customer_email,
+        customer_address,
+        customer_status,
+        id,
+      ]
+    );
+
+    if (updateCustomerResult.affectedRows === 0) {
+      return res.status(404).json({ error: "No changes made" });
+    }
+
+    // Respond to the client with the update result
+    res.json(updateCustomerResult);
+  } catch (error) {
+    console.error("Error updating Customer:", error);
+    res.status(500).json({ error: "Failed to update department." });
   }
 });
 
