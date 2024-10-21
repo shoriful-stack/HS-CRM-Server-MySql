@@ -215,7 +215,13 @@ app.post("/login", async (req, res) => {
     }
 
     // Send back the user role and employee name
-    res.status(200).json({ name: user.employee_name, role: user.role, email: user.employee_email });
+    res
+      .status(200)
+      .json({
+        name: user.employee_name,
+        role: user.role,
+        email: user.employee_email,
+      });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ message: "Internal Server Error" });
@@ -236,8 +242,6 @@ app.post("/employees", async (req, res) => {
 
   if (
     !employee_name ||
-    !department_name ||
-    !designation ||
     !employee_phone ||
     !employee_email ||
     !employee_uid ||
@@ -306,18 +310,26 @@ app.get("/employees", async (req, res) => {
       LEFT JOIN departments d ON e.department_id = d.id
       LEFT JOIN designations des ON e.designation_id = des.id
     `;
-    
+
     let countQuery = "SELECT COUNT(*) as total FROM employees e";
-    
+
     if (search) {
       baseQuery += ` WHERE e.employee_name LIKE ? OR e.employee_uid = ? OR e.employee_phone LIKE ? OR e.employee_email LIKE ?`;
       countQuery += ` WHERE e.employee_name LIKE ? OR e.employee_uid = ? OR e.employee_phone LIKE ? OR e.employee_email LIKE ?`;
     }
 
-    const params = search ? [
-      `%${search}%`, search, `%${search}%`, `%${search}%`,
-      `%${search}%`, search, `%${search}%`, `%${search}%`
-    ] : [];
+    const params = search
+      ? [
+          `%${search}%`,
+          search,
+          `%${search}%`,
+          `%${search}%`,
+          `%${search}%`,
+          search,
+          `%${search}%`,
+          `%${search}%`,
+        ]
+      : [];
 
     baseQuery += " ORDER BY e.id DESC LIMIT ? OFFSET ?";
     params.push(limit, offset);
@@ -340,7 +352,6 @@ app.get("/employees", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch employees" });
   }
 });
-
 
 // GET route to fetch all employees
 app.get("/employees/all", async (req, res) => {
@@ -410,29 +421,57 @@ app.put("/employee/:email/password", async (req, res) => {
   }
 });
 
-// PATCH Endpoint to Update Department
-// app.patch('/departments/:id', async (req, res) => {
-//     const { department_name, department_status } = req.body;
-//     const id = req.params.id;
-//     try {
-//         // Update the department in the `departments` table
-//         const [updateDepartmentResult] = await pool.query(
-//             'UPDATE departments SET department_name = ?, department_status = ? WHERE id = ?',
-//             [department_name, department_status, id]
-//         );
+// PATCH Endpoint to Update Employee
+app.patch("/employees/:id", async (req, res) => {
+  const {
+    employee_name,
+    department_name,
+    designation,
+    employee_phone,
+    employee_email,
+    employee_uid,
+  } = req.body;
+  const id = req.params.id;
+  try {
+    // Find department_id
+    const [departmentResult] = await pool.query(
+      "SELECT id FROM departments WHERE department_name = ?",
+      [department_name]
+    );
+    const department_id = departmentResult[0]?.id;
 
-//         if (updateDepartmentResult.affectedRows === 0) {
-//             return res.status(404).json({ error: 'No changes made' });
-//         }
+    // Find designation_id
+    const [designationResult] = await pool.query(
+      "SELECT id FROM designations WHERE designation = ?",
+      [designation]
+    );
+    const designation_id = designationResult[0]?.id;
 
-//         // Respond to the client with the update result
-//         res.json(updateDepartmentResult);
+    // Update the project in the `employees` table
+    const [updateEmployeeResult] = await pool.query(
+      "UPDATE employees SET employee_name = ?, department_id = ?,designation_id = ?, employee_phone = ?, employee_email = ?, employee_uid = ? WHERE id = ?",
+      [
+        employee_name,
+        department_id,
+        designation_id,
+        employee_phone.trim(),
+        employee_email.trim(),
+        employee_uid.trim(),
+        id,
+      ]
+    );
 
-//     } catch (error) {
-//         console.error('Error updating department:', error);
-//         res.status(500).json({ error: 'Failed to update department.' });
-//     }
-// });
+    if (updateEmployeeResult.affectedRows === 0) {
+      return res.status(404).json({ error: "No changes made" });
+    }
+
+    // Respond to the client with the update result
+    res.json(updateEmployeeResult);
+  } catch (error) {
+    console.error("Error updating Employees:", error);
+    res.status(500).json({ error: "Failed to update Employees." });
+  }
+});
 
 // POST route to add on projects_master
 app.post("/projects_master", async (req, res) => {
