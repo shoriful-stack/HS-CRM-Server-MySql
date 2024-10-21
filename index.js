@@ -34,7 +34,7 @@ app.post("/projects", async (req, res) => {
     pm,
     year,
     phase,
-    project_code
+    project_code,
   } = req.body;
 
   // Check if all required fields are provided
@@ -95,15 +95,15 @@ app.post("/projects", async (req, res) => {
     `;
 
     const [result] = await pool.query(insertQuery, [
-      project_id,   
-      customer_id,   
-      project_type,   
-      department_id,  
-      hod_id,          
-      pm_id,           
-      year,            
-      phase,           
-      project_code  
+      project_id,
+      customer_id,
+      project_type,
+      department_id,
+      hod_id,
+      pm_id,
+      year,
+      phase,
+      project_code,
     ]);
 
     res.status(201).json({ insertedId: result.insertId });
@@ -116,56 +116,100 @@ app.post("/projects", async (req, res) => {
   }
 });
 
-// GET Endpoint for projects with Pagination and Search
 app.get("/projects", async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const search = req.query.search ? req.query.search.trim() : "";
     const offset = (page - 1) * limit;
 
-    // Updated query with distinct alias for HOD and PM
+    const {
+      project_id,
+      department_id,
+      customer_id,
+      pm_id,
+      hod_id,
+      project_name,
+      customer_name,
+      department,
+      pm,
+      year,
+      project_code,
+    } = req.query;
+
+    // Base query with alias for HOD and PM
     let baseQuery = `
-      SELECT p.*, pm.project_name, c.customer_name, d.department_name, 
-             hod.employee_name AS hod_name, pm_employee.employee_name AS pm_name
-      FROM projects p
-      LEFT JOIN projects_master pm ON p.project_id = pm.id
-      LEFT JOIN customers c ON p.customer_id = c.id
-      LEFT JOIN departments d ON p.department_id = d.id
-      LEFT JOIN employees hod ON p.hod_id = hod.id
-      LEFT JOIN employees pm_employee ON p.pm_id = pm_employee.id
-    `;
+SELECT p.*, pm.project_name, c.customer_name, d.department_name, 
+       hod.employee_name AS hod_name, pm_employee.employee_name AS pm_name
+FROM projects p
+LEFT JOIN projects_master pm ON p.project_id = pm.id
+LEFT JOIN customers c ON p.customer_id = c.id
+LEFT JOIN departments d ON p.department_id = d.id
+LEFT JOIN employees hod ON p.hod_id = hod.id
+LEFT JOIN employees pm_employee ON p.pm_id = pm_employee.id
+`;
 
-    let countQuery = "SELECT COUNT(*) as total FROM projects p";
+    // Initialize the filtering conditions
+    let whereConditions = [];
+    let filterParams = [];
 
-    if (search) {
-      baseQuery += ` WHERE p.project_id LIKE ? OR p.employee_uid = ? OR p.employee_phone LIKE ? OR p.employee_email LIKE ?`;
-      countQuery += ` WHERE p.employee_name LIKE ? OR p.employee_uid = ? OR p.employee_phone LIKE ? OR p.employee_email LIKE ?`;
+    // Create filters object
+    const filters = {
+      project_name,
+      customer_name,
+      department,
+      pm,
+      year,
+      project_code,
+    };
+
+    // Filtering logic
+    if (filters.project_name) {
+      whereConditions.push("pm.project_name = ?");
+      filterParams.push(filters.project_name);
+    }
+    if (filters.customer_name) {
+      whereConditions.push("c.customer_name = ?");
+      filterParams.push(filters.customer_name);
+    }
+    if (filters.department) {
+      whereConditions.push("d.department_name = ?");
+      filterParams.push(filters.department);
+    }
+    if (filters.pm) {
+      whereConditions.push("pm_employee.employee_name = ?");
+      filterParams.push(filters.pm);
+    }
+    if (filters.year) {
+      whereConditions.push("p.year = ?");
+      filterParams.push(filters.year);
+    }
+    if (filters.project_code) {
+      whereConditions.push("p.project_code = ?");
+      filterParams.push(filters.project_code);
     }
 
-    const params = search
-      ? [
-          `%${search}%`,
-          search,
-          `%${search}%`,
-          `%${search}%`,
-          `%${search}%`,
-          search,
-          `%${search}%`,
-          `%${search}%`,
-        ]
-      : [];
+    // Append where conditions if any
+    if (whereConditions.length > 0) {
+      baseQuery += " WHERE " + whereConditions.join(" AND ");
+    }
 
+    // Add pagination to the base query
     baseQuery += " ORDER BY p.id DESC LIMIT ? OFFSET ?";
-    params.push(limit, offset);
+
+    // Add limit and offset to the filterParams
+    filterParams.push(limit, offset);
 
     // Fetch total count
-    const [countResult] = await pool.query(countQuery, params.slice(0, 4));
+    const countQuery = `SELECT COUNT(*) as total FROM projects p`; // Adjust your count query if needed
+    const [countResult] = await pool.query(
+      countQuery,
+      filterParams.slice(0, filterParams.length - 2)
+    );
     const total = countResult[0].total;
     const totalPages = Math.ceil(total / limit);
 
-    // Fetch projects
-    const [projects] = await pool.query(baseQuery, params);
+    // Fetch filtered projects
+    const [projects] = await pool.query(baseQuery, filterParams);
 
     res.status(200).json({
       total,
@@ -191,7 +235,7 @@ app.patch("/projects/:id", async (req, res) => {
     pm_name,
     year,
     phase,
-    project_code
+    project_code,
   } = req.body;
   const id = req.params.id;
   try {
@@ -234,15 +278,15 @@ app.patch("/projects/:id", async (req, res) => {
     const [updateProjectResult] = await pool.query(
       "UPDATE projects SET project_id = ?, customer_id = ?, project_type = ?, department_id = ?, hod_id = ?, pm_id = ?, year = ?, phase = ?, project_code = ? WHERE id = ?",
       [
-        project_id,   
-        customer_id,   
-        project_type,   
-        department_id,  
-        hod_id,          
-        pm_id,           
-        year,            
-        phase,           
-        project_code, 
+        project_id,
+        customer_id,
+        project_type,
+        department_id,
+        hod_id,
+        pm_id,
+        year,
+        phase,
+        project_code,
         id,
       ]
     );
@@ -288,13 +332,11 @@ app.post("/login", async (req, res) => {
     }
 
     // Send back the user role and employee name
-    res
-      .status(200)
-      .json({
-        name: user.employee_name,
-        role: user.role,
-        email: user.employee_email,
-      });
+    res.status(200).json({
+      name: user.employee_name,
+      role: user.role,
+      email: user.employee_email,
+    });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ message: "Internal Server Error" });
@@ -756,11 +798,14 @@ app.get("/projects_master", async (req, res) => {
     let params = [];
 
     // If search is provided, modify the queries to include WHERE clause
+    // If search is provided, modify the queries to include WHERE clause
     if (search) {
-      baseQuery += " WHERE project_name LIKE ? ";
+      baseQuery += ` WHERE project_name LIKE ? OR project_code LIKE ?`;
       countQuery = "SELECT COUNT(*) as total " + baseQuery;
       dataQuery = "SELECT * " + baseQuery;
-      params.push(`%${search}%`);
+
+      // Push both parameters for the search
+      params.push(`%${search}%`, `%${search}%`);
     }
 
     // Append ORDER BY, LIMIT, and OFFSET to the data query
@@ -770,8 +815,9 @@ app.get("/projects_master", async (req, res) => {
     // Execute the count query to get total records matching the search
     const [countResult] = await pool.query(
       countQuery,
-      search ? [`%${search}%`] : []
+      search ? [`%${search}%`, `%${search}%`] : [] // Pass both parameters
     );
+
     const total = countResult[0].total;
     const totalPages = Math.ceil(total / limit);
 
