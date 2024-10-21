@@ -180,6 +180,85 @@ app.get("/projects", async (req, res) => {
   }
 });
 
+// PATCH Endpoint to Update Project
+app.patch("/projects/:id", async (req, res) => {
+  const {
+    project_name,
+    customer_name,
+    project_type,
+    department_name,
+    hod_name,
+    pm_name,
+    year,
+    phase,
+    project_code
+  } = req.body;
+  const id = req.params.id;
+  try {
+    // Fetch project ID from project master
+    const [projectResult] = await pool.query(
+      "SELECT id FROM projects_master WHERE project_name = ?",
+      [project_name]
+    );
+    const project_id = projectResult[0]?.id;
+
+    // Fetch customer ID
+    const [customerResult] = await pool.query(
+      "SELECT id FROM customers WHERE customer_name = ?",
+      [customer_name]
+    );
+    const customer_id = customerResult[0]?.id;
+
+    // Fetch department ID
+    const [departmentResult] = await pool.query(
+      "SELECT id FROM departments WHERE department_name = ?",
+      [department_name]
+    );
+    const department_id = departmentResult[0]?.id;
+
+    // Fetch HOD (Head of Department) ID
+    const [hodResult] = await pool.query(
+      "SELECT id FROM employees WHERE employee_name = ?",
+      [hod_name]
+    );
+    const hod_id = hodResult[0]?.id;
+
+    // Fetch Project Manager (PM) ID
+    const [pmResult] = await pool.query(
+      "SELECT id FROM employees WHERE employee_name = ?",
+      [pm_name]
+    );
+    const pm_id = pmResult[0]?.id;
+
+    // Update the project in the `projects` table
+    const [updateProjectResult] = await pool.query(
+      "UPDATE projects SET project_id = ?, customer_id = ?, project_type = ?, department_id = ?, hod_id = ?, pm_id = ?, year = ?, phase = ?, project_code = ? WHERE id = ?",
+      [
+        project_id,   
+        customer_id,   
+        project_type,   
+        department_id,  
+        hod_id,          
+        pm_id,           
+        year,            
+        phase,           
+        project_code, 
+        id,
+      ]
+    );
+
+    if (updateProjectResult.affectedRows === 0) {
+      return res.status(404).json({ error: "No changes made" });
+    }
+
+    // Respond to the client with the update result
+    res.json(updateProjectResult);
+  } catch (error) {
+    console.error("Error updating Project:", error);
+    res.status(500).json({ error: "Failed to update Project." });
+  }
+});
+
 // login endpoint
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
