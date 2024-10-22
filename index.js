@@ -3,7 +3,11 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const mysql = require("mysql2/promise");
+const multer = require('multer');
+const path = require('path');
+const XLSX = require('xlsx');
 const bcrypt = require("bcryptjs");
+const fs = require('fs');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -22,6 +26,23 @@ const pool = mysql.createPool({
   waitForConnections: true,
   queueLimit: 0,
 });
+
+// Set up Multer storage configuration (already provided by you)
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/'); // Directory for storing uploaded files
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname)); // Generate unique filename
+  },
+});
+
+// Initialize multer
+const upload = multer({ storage });
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)){
+    fs.mkdirSync(uploadsDir);
+}
 
 // POST route to add an employee
 app.post("/projects", async (req, res) => {
@@ -788,6 +809,45 @@ app.post("/projects_master", async (req, res) => {
     }
     console.error("Error inserting project_name:", error);
     res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+// POST route to import on projects_master
+app.post('/projects_master/import', upload.single('file'), async (req, res) => {
+  if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded!' });
+  }
+
+  try {
+      const workbook = XLSX.readFile(req.file.path);
+      const sheetName = workbook.SheetNames[0];
+      const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+      const projectData = sheetData.map((row) => ({
+          project_name: row['Project Name'], 
+          project_code: row['Project Code'], 
+          project_status: row['Project Status'] === 'Active' ? 1 : 0,
+      }));
+
+      if (projectData.length === 0) {
+          return res.status(400).json({ message: 'No valid data found in the file!' });
+      }
+
+      const insertQuery = `INSERT INTO projects_master (project_name, project_code, project_status) VALUES ?`;
+      const values = projectData.map((project) => [
+          project.project_name,
+          project.project_code,
+          project.project_status,
+      ]);
+
+      // Using the connection pool to execute the query
+      await pool.query(insertQuery, [values]);
+
+      fs.unlinkSync(req.file.path); // Clean up the uploaded file
+      res.status(200).json({ message: 'Projects imported successfully!' });
+  } catch (error) {
+      console.error('Error importing projects:', error);
+      res.status(500).json({ message: 'Failed to import projects.' });
   }
 });
 
