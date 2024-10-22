@@ -128,9 +128,11 @@ app.get("/projects", async (req, res) => {
       customer_id,
       pm_id,
       hod_id,
+      project_type,
       project_name,
       customer_name,
       department,
+      hod,
       pm,
       year,
       project_code,
@@ -138,7 +140,7 @@ app.get("/projects", async (req, res) => {
 
     // Base query with alias for HOD and PM
     let baseQuery = `
-SELECT p.*, pm.project_name, c.customer_name, d.department_name, 
+SELECT p.*, pm.project_name, p.project_type, c.customer_name, d.department_name, 
        hod.employee_name AS hod_name, pm_employee.employee_name AS pm_name
 FROM projects p
 LEFT JOIN projects_master pm ON p.project_id = pm.id
@@ -154,18 +156,25 @@ LEFT JOIN employees pm_employee ON p.pm_id = pm_employee.id
 
     // Create filters object
     const filters = {
+      project_type,
       project_name,
       customer_name,
       department,
       pm,
       year,
       project_code,
+      hod,
     };
 
     // Filtering logic
     if (filters.project_name) {
       whereConditions.push("pm.project_name = ?");
       filterParams.push(filters.project_name);
+    }
+    
+    if (filters.project_type) {
+      whereConditions.push("p.project_type = ?");
+      filterParams.push(filters.project_type);
     }
     if (filters.customer_name) {
       whereConditions.push("c.customer_name = ?");
@@ -186,6 +195,10 @@ LEFT JOIN employees pm_employee ON p.pm_id = pm_employee.id
     if (filters.project_code) {
       whereConditions.push("p.project_code = ?");
       filterParams.push(filters.project_code);
+    }
+    if (filters.hod) {
+      whereConditions.push("hod.employee_name = ?");
+      filterParams.push(filters.hod);
     }
 
     // Append where conditions if any
