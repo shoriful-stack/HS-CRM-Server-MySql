@@ -665,6 +665,49 @@ app.post("/customers", async (req, res) => {
   }
 });
 
+// POST route to import on customers
+app.post('/customers/import', upload.single('file'), async (req, res) => {
+  if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded!' });
+  }
+
+  try {
+      const workbook = XLSX.readFile(req.file.path);
+      const sheetName = workbook.SheetNames[0];
+      const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+      const customerData = sheetData.map((row) => ({
+        customer_name: row['Name'], 
+        customer_phone: row['Phone'], 
+        customer_email: row['Email'], 
+        customer_address: row['Address'], 
+        customer_status: row['Status'] === 'Active' ? 1 : 0,
+      }));
+
+      if (customerData.length === 0) {
+          return res.status(400).json({ message: 'No valid data found in the file!' });
+      }
+
+      const insertQuery = `INSERT INTO customers (customer_name, customer_phone, customer_email, customer_address, customer_status) VALUES ?`;
+      const values = customerData.map((customer) => [
+          customer.customer_name,
+          customer.customer_phone,
+          customer.customer_email,
+          customer.customer_address,
+          customer.customer_status,
+      ]);
+
+      // Using the connection pool to execute the query
+      await pool.query(insertQuery, [values]);
+
+      fs.unlinkSync(req.file.path); // Clean up the uploaded file
+      res.status(200).json({ message: 'Customers imported successfully!' });
+  } catch (error) {
+      console.error('Error importing Customers:', error);
+      res.status(500).json({ message: 'Failed to import Customers.' });
+  }
+});
+
 // GET Endpoint for customers with Pagination and Search
 app.get("/customers", async (req, res) => {
   try {
