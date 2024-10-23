@@ -526,7 +526,7 @@ app.post("/employees/import", upload.single("file"), async (req, res) => {
       ]);
     }
 
-    fs.unlinkSync(req.file.path); // Clean up the uploaded file
+    fs.unlinkSync(req.file.path);
     res.status(200).json({ message: "Employees imported successfully!" });
   } catch (error) {
     console.error("Error importing employees:", error);
