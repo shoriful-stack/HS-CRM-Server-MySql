@@ -3,11 +3,11 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const mysql = require("mysql2/promise");
-const multer = require('multer');
-const path = require('path');
-const XLSX = require('xlsx');
+const multer = require("multer");
+const path = require("path");
+const XLSX = require("xlsx");
 const bcrypt = require("bcryptjs");
-const fs = require('fs');
+const fs = require("fs");
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -30,7 +30,7 @@ const pool = mysql.createPool({
 // Set up Multer storage configuration (already provided by you)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/'); // Directory for storing uploaded files
+    cb(null, "uploads/"); // Directory for storing uploaded files
   },
   filename: function (req, file, cb) {
     cb(null, Date.now() + path.extname(file.originalname)); // Generate unique filename
@@ -39,9 +39,9 @@ const storage = multer.diskStorage({
 
 // Initialize multer
 const upload = multer({ storage });
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)){
-    fs.mkdirSync(uploadsDir);
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
 }
 
 // POST route to add an employee
@@ -192,7 +192,7 @@ LEFT JOIN employees pm_employee ON p.pm_id = pm_employee.id
       whereConditions.push("pm.project_name = ?");
       filterParams.push(filters.project_name);
     }
-    
+
     if (filters.project_type) {
       whereConditions.push("p.project_type = ?");
       filterParams.push(filters.project_type);
@@ -445,6 +445,95 @@ app.post("/employees", async (req, res) => {
   }
 });
 
+// POST route to import on employees
+app.post("/employees/import", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: "No file uploaded!" });
+  }
+
+  try {
+    const workbook = XLSX.readFile(req.file.path);
+    const sheetName = workbook.SheetNames[0];
+    const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    const employeeData = sheetData.map((row) => ({
+      employee_uid: row["UID"],
+      employee_name: row["Name"],
+      employee_phone: row["Phone"],
+      employee_email: row["Email"],
+      department_name: row["Department"],
+      designation: row["Designation"],
+      employee_pass: row["Password"],
+      role: row["Role"],
+    }));
+
+    if (employeeData.length === 0) {
+      return res.status(400).json({ message: "No valid data found in the file!" });
+    }
+
+    for (let employee of employeeData) {
+      // Check if department exists, if not, insert it
+      const [departmentResult] = await pool.query(
+        "SELECT id FROM departments WHERE department_name = ?",
+        [employee.department_name]
+      );
+      let department_id;
+      if (departmentResult.length === 0) {
+        const [insertDepartment] = await pool.query(
+          "INSERT INTO departments (department_name) VALUES (?)",
+          [employee.department_name]
+        );
+        department_id = insertDepartment.insertId;
+      } else {
+        department_id = departmentResult[0].id;
+      }
+
+      // Check if designation exists, if not, insert it
+      const [designationResult] = await pool.query(
+        "SELECT id FROM designations WHERE designation = ?",
+        [employee.designation]
+      );
+      let designation_id;
+      if (designationResult.length === 0) {
+        const [insertDesignation] = await pool.query(
+          "INSERT INTO designations (designation) VALUES (?)",
+          [employee.designation]
+        );
+        designation_id = insertDesignation.insertId;
+      } else {
+        designation_id = designationResult[0].id;
+      }
+
+      // Hash employee password
+      const hash = await bcrypt.genSalt(10);
+      const hashedPass = await bcrypt.hash(employee.employee_pass, hash);
+
+      // Insert employee data with the retrieved department and designation IDs
+      const insertQuery = `
+        INSERT INTO employees 
+        (employee_name, employee_phone, employee_email, employee_uid, employee_pass, department_id, designation_id, role)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      await pool.query(insertQuery, [
+        employee.employee_name,
+        employee.employee_phone,
+        employee.employee_email,
+        employee.employee_uid,
+        hashedPass,
+        department_id,
+        designation_id,
+        employee.role,
+      ]);
+    }
+
+    fs.unlinkSync(req.file.path); // Clean up the uploaded file
+    res.status(200).json({ message: "Employees imported successfully!" });
+  } catch (error) {
+    console.error("Error importing employees:", error);
+    res.status(500).json({ message: "Failed to import employees." });
+  }
+});
+
 // GET Endpoint for employees with Pagination and Search
 app.get("/employees", async (req, res) => {
   try {
@@ -666,45 +755,47 @@ app.post("/customers", async (req, res) => {
 });
 
 // POST route to import on customers
-app.post('/customers/import', upload.single('file'), async (req, res) => {
+app.post("/customers/import", upload.single("file"), async (req, res) => {
   if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded!' });
+    return res.status(400).json({ message: "No file uploaded!" });
   }
 
   try {
-      const workbook = XLSX.readFile(req.file.path);
-      const sheetName = workbook.SheetNames[0];
-      const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+    const workbook = XLSX.readFile(req.file.path);
+    const sheetName = workbook.SheetNames[0];
+    const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
-      const customerData = sheetData.map((row) => ({
-        customer_name: row['Name'], 
-        customer_phone: row['Phone'], 
-        customer_email: row['Email'], 
-        customer_address: row['Address'], 
-        customer_status: row['Status'] === 'Active' ? 1 : 0,
-      }));
+    const customerData = sheetData.map((row) => ({
+      customer_name: row["Name"],
+      customer_phone: row["Phone"],
+      customer_email: row["Email"],
+      customer_address: row["Address"],
+      customer_status: row["Status"] === "Active" ? 1 : 0,
+    }));
 
-      if (customerData.length === 0) {
-          return res.status(400).json({ message: 'No valid data found in the file!' });
-      }
+    if (customerData.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "No valid data found in the file!" });
+    }
 
-      const insertQuery = `INSERT INTO customers (customer_name, customer_phone, customer_email, customer_address, customer_status) VALUES ?`;
-      const values = customerData.map((customer) => [
-          customer.customer_name,
-          customer.customer_phone,
-          customer.customer_email,
-          customer.customer_address,
-          customer.customer_status,
-      ]);
+    const insertQuery = `INSERT INTO customers (customer_name, customer_phone, customer_email, customer_address, customer_status) VALUES ?`;
+    const values = customerData.map((customer) => [
+      customer.customer_name,
+      customer.customer_phone,
+      customer.customer_email,
+      customer.customer_address,
+      customer.customer_status,
+    ]);
 
-      // Using the connection pool to execute the query
-      await pool.query(insertQuery, [values]);
+    // Using the connection pool to execute the query
+    await pool.query(insertQuery, [values]);
 
-      fs.unlinkSync(req.file.path); // Clean up the uploaded file
-      res.status(200).json({ message: 'Customers imported successfully!' });
+    fs.unlinkSync(req.file.path); // Clean up the uploaded file
+    res.status(200).json({ message: "Customers imported successfully!" });
   } catch (error) {
-      console.error('Error importing Customers:', error);
-      res.status(500).json({ message: 'Failed to import Customers.' });
+    console.error("Error importing Customers:", error);
+    res.status(500).json({ message: "Failed to import Customers." });
   }
 });
 
@@ -856,41 +947,43 @@ app.post("/projects_master", async (req, res) => {
 });
 
 // POST route to import on projects_master
-app.post('/projects_master/import', upload.single('file'), async (req, res) => {
+app.post("/projects_master/import", upload.single("file"), async (req, res) => {
   if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded!' });
+    return res.status(400).json({ message: "No file uploaded!" });
   }
 
   try {
-      const workbook = XLSX.readFile(req.file.path);
-      const sheetName = workbook.SheetNames[0];
-      const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+    const workbook = XLSX.readFile(req.file.path);
+    const sheetName = workbook.SheetNames[0];
+    const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
-      const projectData = sheetData.map((row) => ({
-          project_name: row['Project Name'], 
-          project_code: row['Project Code'], 
-          project_status: row['Project Status'] === 'Active' ? 1 : 0,
-      }));
+    const projectData = sheetData.map((row) => ({
+      project_name: row["Project Name"],
+      project_code: row["Project Code"],
+      project_status: row["Project Status"] === "Active" ? 1 : 0,
+    }));
 
-      if (projectData.length === 0) {
-          return res.status(400).json({ message: 'No valid data found in the file!' });
-      }
+    if (projectData.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "No valid data found in the file!" });
+    }
 
-      const insertQuery = `INSERT INTO projects_master (project_name, project_code, project_status) VALUES ?`;
-      const values = projectData.map((project) => [
-          project.project_name,
-          project.project_code,
-          project.project_status,
-      ]);
+    const insertQuery = `INSERT INTO projects_master (project_name, project_code, project_status) VALUES ?`;
+    const values = projectData.map((project) => [
+      project.project_name,
+      project.project_code,
+      project.project_status,
+    ]);
 
-      // Using the connection pool to execute the query
-      await pool.query(insertQuery, [values]);
+    // Using the connection pool to execute the query
+    await pool.query(insertQuery, [values]);
 
-      fs.unlinkSync(req.file.path); // Clean up the uploaded file
-      res.status(200).json({ message: 'Projects imported successfully!' });
+    fs.unlinkSync(req.file.path); // Clean up the uploaded file
+    res.status(200).json({ message: "Projects imported successfully!" });
   } catch (error) {
-      console.error('Error importing projects:', error);
-      res.status(500).json({ message: 'Failed to import projects.' });
+    console.error("Error importing projects:", error);
+    res.status(500).json({ message: "Failed to import projects." });
   }
 });
 
@@ -1139,6 +1232,45 @@ app.post("/designations", async (req, res) => {
     }
     console.error("Error inserting designation:", error);
     res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+// POST route to import on designations
+app.post("/designations/import", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: "No file uploaded!" });
+  }
+
+  try {
+    const workbook = XLSX.readFile(req.file.path);
+    const sheetName = workbook.SheetNames[0];
+    const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    const designationData = sheetData.map((row) => ({
+      designation: row["Designation"],
+      designation_status: row["Status"] === "Active" ? 1 : 0,
+    }));
+
+    if (designationData.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "No valid data found in the file!" });
+    }
+
+    const insertQuery = `INSERT INTO designations (designation, designation_status) VALUES ?`;
+    const values = designationData.map((designation) => [
+      designation.designation,
+      designation.designation_status,
+    ]);
+
+    // Using the connection pool to execute the query
+    await pool.query(insertQuery, [values]);
+
+    fs.unlinkSync(req.file.path); // Clean up the uploaded file
+    res.status(200).json({ message: "Designations imported successfully!" });
+  } catch (error) {
+    console.error("Error importing Designations:", error);
+    res.status(500).json({ message: "Failed to import Designations." });
   }
 });
 
