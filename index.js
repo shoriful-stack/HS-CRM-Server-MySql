@@ -137,6 +137,139 @@ app.post("/projects", async (req, res) => {
   }
 });
 
+// POST route to import on projects
+app.post("/projects/import", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: "No file uploaded!" });
+  }
+
+  try {
+    const workbook = XLSX.readFile(req.file.path);
+    const sheetName = workbook.SheetNames[0];
+    const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    const projectData = sheetData.map((row) => ({
+      project_name: row["Project Name"],
+      customer_name: row["Customer Name"],
+      project_type: row["Project Type"],
+      department_name: row["Department"],
+      hod: row["HOD"],
+      pm: row["Project Manager"],
+      year: row["Year"],
+      phase: row["Phase#"],
+      project_code: row["Project Code"]
+    }));
+
+    if (projectData.length === 0) {
+      return res.status(400).json({ message: "No valid data found in the file!" });
+    }
+
+    for (let project of projectData) {
+      // Check if project exists, if not, insert it
+      const [projectResult] = await pool.query(
+        "SELECT id FROM projects_master WHERE project_name = ?",
+        [project.project_name]
+      );
+      let project_id;
+      if (projectResult.length === 0) {
+        const [insertProjectName] = await pool.query(
+          "INSERT INTO projects_master (project_name) VALUES (?)",
+          [project.project_name]
+        );
+        project_id = insertProjectName.insertId;
+      } else {
+        project_id = projectResult[0].id;
+      }
+      // Check if customer exists, if not, insert it
+      const [customerResult] = await pool.query(
+        "SELECT id FROM customers WHERE customer_name = ?",
+        [project.customer_name]
+      );
+      let customer_id;
+      if (customerResult.length === 0) {
+        const [insertCustomer] = await pool.query(
+          "INSERT INTO customers (customer_name) VALUES (?)",
+          [project.customer_name]
+        );
+        customer_id = insertCustomer.insertId;
+      } else {
+        customer_id = customerResult[0].id;
+      }
+      // Check if department exists, if not, insert it
+      const [departmentResult] = await pool.query(
+        "SELECT id FROM departments WHERE department_name = ?",
+        [project.department_name]
+      );
+      let department_id;
+      if (departmentResult.length === 0) {
+        const [insertDepartment] = await pool.query(
+          "INSERT INTO departments (department_name) VALUES (?)",
+          [project.department_name]
+        );
+        department_id = insertDepartment.insertId;
+      } else {
+        department_id = departmentResult[0].id;
+      }
+
+      // Check if employee(hod) exists, if not, insert it
+      const [hodResult] = await pool.query(
+        "SELECT id FROM employees WHERE employee_name = ?",
+        [project.hod]
+      );
+      let hod_id;
+      if (hodResult.length === 0) {
+        const [insertHod] = await pool.query(
+          "INSERT INTO employees (employee_name) VALUES (?)",
+          [project.hod]
+        );
+        hod_id = insertHod.insertId;
+      } else {
+        hod_id = hodResult[0].id;
+      }
+      // Check if employee(pm) exists, if not, insert it
+      const [pmResult] = await pool.query(
+        "SELECT id FROM employees WHERE employee_name = ?",
+        [project.pm]
+      );
+      let pm_id;
+      if (pmResult.length === 0) {
+        const [insertPm] = await pool.query(
+          "INSERT INTO employees (employee_name) VALUES (?)",
+          [project.pm]
+        );
+        pm_id = insertPm.insertId;
+      } else {
+        pm_id = pmResult[0].id;
+      }
+
+      // Insert project data with the retrieved department and designation IDs
+      const insertQuery = `
+        INSERT INTO projects 
+        (project_id, customer_id, project_type, hod_id, pm_id, department_id, year, phase, project_code)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      await pool.query(insertQuery, [
+        project_id,
+        customer_id,
+        project.project_type,
+        hod_id,
+        pm_id,
+        department_id,
+        project.year,
+        project.phase,
+        project.project_code
+      ]);
+    }
+
+    fs.unlinkSync(req.file.path);
+    res.status(200).json({ message: "projects imported successfully!" });
+  } catch (error) {
+    console.error("Error importing projects:", error);
+    res.status(500).json({ message: "Failed to import projects." });
+  }
+});
+
+// GET Endpoint for employees with Pagination and Search
 app.get("/projects", async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
