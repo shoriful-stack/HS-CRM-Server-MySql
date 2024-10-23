@@ -549,33 +549,41 @@ app.get("/employees", async (req, res) => {
       LEFT JOIN designations des ON e.designation_id = des.id
     `;
 
-    let countQuery = "SELECT COUNT(*) as total FROM employees e";
+    let countQuery = "SELECT COUNT(*) as total FROM employees e LEFT JOIN departments d ON e.department_id = d.id LEFT JOIN designations des ON e.designation_id = des.id";
 
+    const params = [];
+
+    // Search condition
     if (search) {
-      baseQuery += ` WHERE e.employee_name LIKE ? OR e.employee_uid = ? OR e.employee_phone LIKE ? OR e.employee_email LIKE ?`;
-      countQuery += ` WHERE e.employee_name LIKE ? OR e.employee_uid = ? OR e.employee_phone LIKE ? OR e.employee_email LIKE ?`;
-    }
+      baseQuery += ` WHERE 
+        e.employee_name LIKE ? OR 
+        e.employee_uid LIKE ? OR 
+        e.employee_phone LIKE ? OR 
+        e.employee_email LIKE ? OR 
+        d.department_name LIKE ? OR 
+        des.designation LIKE ?`;
 
-    const params = search
-      ? [
-          `%${search}%`,
-          search,
-          `%${search}%`,
-          `%${search}%`,
-          `%${search}%`,
-          search,
-          `%${search}%`,
-          `%${search}%`,
-        ]
-      : [];
+      countQuery += ` WHERE 
+        e.employee_name LIKE ? OR 
+        e.employee_uid LIKE ? OR 
+        e.employee_phone LIKE ? OR 
+        e.employee_email LIKE ? OR 
+        d.department_name LIKE ? OR 
+        des.designation LIKE ?`;
+
+      const likeSearch = `%${search}%`;
+      params.push(likeSearch, likeSearch, likeSearch, likeSearch, likeSearch, likeSearch);
+    }
 
     baseQuery += " ORDER BY e.id DESC LIMIT ? OFFSET ?";
     params.push(limit, offset);
 
-    const [countResult] = await pool.query(countQuery, params.slice(0, 4));
+    // Execute the count query with the correct params
+    const [countResult] = await pool.query(countQuery, params.slice(0, params.length - 2));
     const total = countResult[0].total;
     const totalPages = Math.ceil(total / limit);
 
+    // Execute the employee query with the correct params
     const [employees] = await pool.query(baseQuery, params);
 
     res.status(200).json({
@@ -960,7 +968,7 @@ app.post("/projects_master/import", upload.single("file"), async (req, res) => {
     const projectData = sheetData.map((row) => ({
       project_name: row["Project Name"],
       project_code: row["Project Code"],
-      project_status: row["Project Status"] === "Active" ? 1 : 0,
+      project_status: row["Status"] === "Active" ? 1 : 0,
     }));
 
     if (projectData.length === 0) {
