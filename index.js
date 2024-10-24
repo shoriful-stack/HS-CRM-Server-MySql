@@ -128,7 +128,6 @@ app.post("/contracts", upload.single("contract_file"), async (req, res) => {
   }
 });
 
-
 // Contracts fetching endpoint with filters and pagination
 app.get("/contracts", async (req, res) => {
   const { page = 1, limit = 10, project_type, contract_status, project_name, customer_name, hod_name, pm_name, year, signingDateFrom, signingDateTo, effectiveDateFrom, effectiveDateTo, closingDateFrom, closingDateTo } = req.query;
@@ -203,6 +202,69 @@ app.get("/contracts", async (req, res) => {
   }
 });
 
+// All Contracts fetching endpoint 
+app.get("/contracts/all", async (req, res) => {
+  const { project_type, contract_status, project_name, customer_name, hod_name, pm_name, year, signingDateFrom, signingDateTo, effectiveDateFrom, effectiveDateTo, closingDateFrom, closingDateTo } = req.query;
+  
+  let filterConditions = [];
+  let filterValues = [];
+
+  // Add conditions based on provided filters
+  if (project_type) {
+      filterConditions.push("project_type = ?");
+      filterValues.push(project_type);
+  }
+  if (contract_status) {
+      filterConditions.push("contract_status = ?");
+      filterValues.push(contract_status);
+  }
+  if (project_name) {
+      filterConditions.push("project_name LIKE ?");
+      filterValues.push(`%${project_name}%`);
+  }
+  if (customer_name) {
+      filterConditions.push("customer_name LIKE ?");
+      filterValues.push(`%${customer_name}%`);
+  }
+  if (hod_name) {
+      filterConditions.push("hod_name LIKE ?");
+      filterValues.push(`%${hod_name}%`);
+  }
+  if (pm_name) {
+      filterConditions.push("pm_name LIKE ?");
+      filterValues.push(`%${pm_name}%`);
+  }
+  if (year) {
+      filterConditions.push("year LIKE ?");
+      filterValues.push(`%${year}%`);
+  }
+  if (signingDateFrom && signingDateTo) {
+      filterConditions.push("signing_date BETWEEN ? AND ?");
+      filterValues.push(signingDateFrom, signingDateTo);
+  }
+  if (effectiveDateFrom && effectiveDateTo) {
+      filterConditions.push("effective_date BETWEEN ? AND ?");
+      filterValues.push(effectiveDateFrom, effectiveDateTo);
+  }
+  if (closingDateFrom && closingDateTo) {
+      filterConditions.push("closing_date BETWEEN ? AND ?");
+      filterValues.push(closingDateFrom, closingDateTo);
+  }
+
+  const filterQuery = filterConditions.length > 0 ? `WHERE ${filterConditions.join(" AND ")}` : "";
+
+  try {
+      // Query to get contracts without pagination
+      const [contracts] = await pool.query(
+          `SELECT * FROM contracts ${filterQuery}`,
+          filterValues
+      );
+
+      res.status(200).json(contracts);
+  } catch (err) {
+      res.status(500).json({ error: "Server error" });
+  }
+});
 
 
 // POST route to add an projects
