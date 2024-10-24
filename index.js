@@ -44,7 +44,168 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
-// POST route to add an employee
+
+// Contract creation endpoint
+app.post("/contracts", upload.single("contract_file"), async (req, res) => {
+  const {
+    contract_title,
+    project_id,
+    project_name,
+    customer_name,
+    department_name,
+    hod_name,
+    pm_name,
+    year,
+    phase,
+    project_code,
+    project_type,
+    refNo,
+    first_party,
+    scan_copy_status,
+    hard_copy_status,
+  } = req.body;
+
+  const contract_file = req.file; // Uploaded contract file
+
+  try {
+    // Validate if file is uploaded
+    if (!contract_file) {
+      return res.status(400).json({ error: "Contract file is required" });
+    }
+
+    const signingDate = new Date(req.body.signing_date);
+    const effectiveDate = new Date(req.body.effective_date);
+    const closingDate = new Date(req.body.closing_date);
+    const today = new Date();
+
+    // Determine contract_status based on closing_dat
+    const contract_status = closingDate > today ? 1 : 0; // "0" for Expired, "1" for Not Expired
+
+    // Insert contract data into the database
+    const [result] = await pool.query(
+      `INSERT INTO contracts (
+        contract_title, project_id, project_name, customer_name, project_type, department, hod, pm, year, phase, project_code, refNo, first_party, signing_date, 
+        effective_date, closing_date, contract_status, scan_copy_status, hard_copy_status, contract_file
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        contract_title,
+        project_id,
+        project_name,
+        customer_name,
+        project_type,
+        department_name,
+        hod_name,
+        pm_name,
+        year,
+        phase,
+        project_code,
+        refNo,
+        first_party,
+        signingDate,
+        effectiveDate,
+        closingDate,
+        contract_status,
+        scan_copy_status,
+        hard_copy_status,
+        contract_file.filename, // Storing file path in the database
+      ]
+    );
+
+    // Check if insert was successful
+    if (result.affectedRows === 1) {
+      return res
+        .status(201)
+        .json({
+          message: "Contract created successfully",
+          insertedId: result.insertId,
+        });
+    } else {
+      return res.status(500).json({ error: "Failed to create contract" });
+    }
+  } catch (error) {
+    console.error("Error creating contract:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+// Contracts fetching endpoint with filters and pagination
+app.get("/contracts", async (req, res) => {
+  const { page = 1, limit = 10, project_type, contract_status, project_name, customer_name, hod_name, pm_name, year, signingDateFrom, signingDateTo, effectiveDateFrom, effectiveDateTo, closingDateFrom, closingDateTo } = req.query;
+  
+  const offset = (page - 1) * limit;
+  let filterConditions = [];
+  let filterValues = [];
+
+  // Add conditions based on provided filters
+  if (project_type) {
+      filterConditions.push("project_type = ?");
+      filterValues.push(project_type);
+  }
+  if (contract_status) {
+      filterConditions.push("contract_status = ?");
+      filterValues.push(contract_status);
+  }
+  if (project_name) {
+      filterConditions.push("project_name LIKE ?");
+      filterValues.push(`%${project_name}%`);
+  }
+  if (customer_name) {
+      filterConditions.push("customer_name LIKE ?");
+      filterValues.push(`%${customer_name}%`);
+  }
+  if (hod_name) {
+      filterConditions.push("hod_name LIKE ?");
+      filterValues.push(`%${hod_name}%`);
+  }
+  if (pm_name) {
+      filterConditions.push("pm_name LIKE ?");
+      filterValues.push(`%${pm_name}%`);
+  }
+  if (year) {
+      filterConditions.push("year LIKE ?");
+      filterValues.push(`%${year}%`);
+  }
+  if (signingDateFrom && signingDateTo) {
+      filterConditions.push("signing_date BETWEEN ? AND ?");
+      filterValues.push(signingDateFrom, signingDateTo);
+  }
+  if (effectiveDateFrom && effectiveDateTo) {
+      filterConditions.push("effective_date BETWEEN ? AND ?");
+      filterValues.push(effectiveDateFrom, effectiveDateTo);
+  }
+  if (closingDateFrom && closingDateTo) {
+      filterConditions.push("closing_date BETWEEN ? AND ?");
+      filterValues.push(closingDateFrom, closingDateTo);
+  }
+
+  const filterQuery = filterConditions.length > 0 ? `WHERE ${filterConditions.join(" AND ")}` : "";
+  
+  try {
+      // Query to get contracts with pagination
+      const [contracts] = await pool.query(
+          `SELECT * FROM contracts ${filterQuery} LIMIT ? OFFSET ?`,
+          [...filterValues, parseInt(limit), parseInt(offset)]
+      );
+      
+      // Query to get the total count (for pagination)
+      const [countResult] = await pool.query(
+          `SELECT COUNT(*) as total FROM contracts ${filterQuery}`,
+          filterValues
+      );
+      
+      const total = countResult[0].total;
+      const totalPages = Math.ceil(total / limit);
+
+      res.json({ contracts, total, totalPages });
+  } catch (err) {
+      res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+
+// POST route to add an projects
 app.post("/projects", async (req, res) => {
   const {
     project_name,
@@ -157,12 +318,12 @@ app.post("/projects/import", upload.single("file"), async (req, res) => {
       pm: row["Project Manager"],
       year: row["Year"],
       phase: row["Phase#"],
-      project_code: row["Project Code"]
+      project_code: row["Project Code"],
     }));
 
     if (!projectResult.length) {
       throw new Error("Project not found");
-    }    
+    }
 
     for (let project of projectData) {
       // Check if project exists, if not, insert it
@@ -257,7 +418,7 @@ app.post("/projects/import", upload.single("file"), async (req, res) => {
         department_id,
         project.year,
         project.phase,
-        project.project_code
+        project.project_code,
       ]);
     }
 
@@ -367,7 +528,7 @@ LEFT JOIN employees pm_employee ON p.pm_id = pm_employee.id
     filterParams.push(limit, offset);
 
     // Fetch total count
-    const countQuery = `SELECT COUNT(*) as total FROM projects p`; 
+    const countQuery = `SELECT COUNT(*) as total FROM projects p`;
     const [countResult] = await pool.query(
       countQuery,
       filterParams.slice(0, filterParams.length - 2)
@@ -681,7 +842,9 @@ app.post("/employees/import", upload.single("file"), async (req, res) => {
     }));
 
     if (employeeData.length === 0) {
-      return res.status(400).json({ message: "No valid data found in the file!" });
+      return res
+        .status(400)
+        .json({ message: "No valid data found in the file!" });
     }
 
     for (let employee of employeeData) {
@@ -762,7 +925,8 @@ app.get("/employees", async (req, res) => {
       LEFT JOIN designations des ON e.designation_id = des.id
     `;
 
-    let countQuery = "SELECT COUNT(*) as total FROM employees e LEFT JOIN departments d ON e.department_id = d.id LEFT JOIN designations des ON e.designation_id = des.id";
+    let countQuery =
+      "SELECT COUNT(*) as total FROM employees e LEFT JOIN departments d ON e.department_id = d.id LEFT JOIN designations des ON e.designation_id = des.id";
 
     const params = [];
 
@@ -785,14 +949,24 @@ app.get("/employees", async (req, res) => {
         des.designation LIKE ?`;
 
       const likeSearch = `%${search}%`;
-      params.push(likeSearch, likeSearch, likeSearch, likeSearch, likeSearch, likeSearch);
+      params.push(
+        likeSearch,
+        likeSearch,
+        likeSearch,
+        likeSearch,
+        likeSearch,
+        likeSearch
+      );
     }
 
     baseQuery += " ORDER BY e.id DESC LIMIT ? OFFSET ?";
     params.push(limit, offset);
 
     // Execute the count query with the correct params
-    const [countResult] = await pool.query(countQuery, params.slice(0, params.length - 2));
+    const [countResult] = await pool.query(
+      countQuery,
+      params.slice(0, params.length - 2)
+    );
     const total = countResult[0].total;
     const totalPages = Math.ceil(total / limit);
 
