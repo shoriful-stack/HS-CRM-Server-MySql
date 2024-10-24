@@ -160,9 +160,9 @@ app.post("/projects/import", upload.single("file"), async (req, res) => {
       project_code: row["Project Code"]
     }));
 
-    if (projectData.length === 0) {
-      return res.status(400).json({ message: "No valid data found in the file!" });
-    }
+    if (!projectResult.length) {
+      throw new Error("Project not found");
+    }    
 
     for (let project of projectData) {
       // Check if project exists, if not, insert it
@@ -367,7 +367,7 @@ LEFT JOIN employees pm_employee ON p.pm_id = pm_employee.id
     filterParams.push(limit, offset);
 
     // Fetch total count
-    const countQuery = `SELECT COUNT(*) as total FROM projects p`; // Adjust your count query if needed
+    const countQuery = `SELECT COUNT(*) as total FROM projects p`; 
     const [countResult] = await pool.query(
       countQuery,
       filterParams.slice(0, filterParams.length - 2)
@@ -388,6 +388,86 @@ LEFT JOIN employees pm_employee ON p.pm_id = pm_employee.id
   } catch (error) {
     console.error("Error fetching projects:", error);
     res.status(500).json({ message: "Failed to fetch projects" });
+  }
+});
+
+// GET route to fetch all projects
+app.get("/projects/all", async (req, res) => {
+  try {
+    const {
+      project_type,
+      project_name,
+      customer_name,
+      department,
+      pm,
+      year,
+      project_code,
+      hod,
+    } = req.query;
+
+    // Base query
+    let baseQuery = `
+      SELECT p.*, pm.project_name, c.customer_name, d.department_name, 
+             hod.employee_name AS hod_name, pm_employee.employee_name AS pm_name
+      FROM projects p
+      LEFT JOIN projects_master pm ON p.project_id = pm.id
+      LEFT JOIN customers c ON p.customer_id = c.id
+      LEFT JOIN departments d ON p.department_id = d.id
+      LEFT JOIN employees hod ON p.hod_id = hod.id
+      LEFT JOIN employees pm_employee ON p.pm_id = pm_employee.id
+    `;
+
+    // Initialize where conditions and filter parameters
+    let whereConditions = [];
+    let filterParams = [];
+
+    // Build filter conditions
+    if (project_name) {
+      whereConditions.push("pm.project_name = ?");
+      filterParams.push(project_name);
+    }
+    if (project_type) {
+      whereConditions.push("p.project_type = ?");
+      filterParams.push(project_type);
+    }
+    if (customer_name) {
+      whereConditions.push("c.customer_name = ?");
+      filterParams.push(customer_name);
+    }
+    if (department) {
+      whereConditions.push("d.department_name = ?");
+      filterParams.push(department);
+    }
+    if (pm) {
+      whereConditions.push("pm_employee.employee_name = ?");
+      filterParams.push(pm);
+    }
+    if (year) {
+      whereConditions.push("p.year = ?");
+      filterParams.push(year);
+    }
+    if (project_code) {
+      whereConditions.push("p.project_code = ?");
+      filterParams.push(project_code);
+    }
+    if (hod) {
+      whereConditions.push("hod.employee_name = ?");
+      filterParams.push(hod);
+    }
+
+    // Append where conditions if any
+    if (whereConditions.length > 0) {
+      baseQuery += " WHERE " + whereConditions.join(" AND ");
+    }
+
+    // Execute the query
+    const [projects] = await pool.query(baseQuery, filterParams);
+
+    // Send the result as a response
+    res.status(200).json(projects);
+  } catch (error) {
+    console.error("Error fetching projects:", error);
+    res.status(500).json({ error: "Failed to fetch all projects" });
   }
 });
 
